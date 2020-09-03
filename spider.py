@@ -1,8 +1,13 @@
+#-*- coding =utf-8 -*-
 
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.chrome.options import Options
-import time
+
+import time,os
+import sqlite3
+import openpyxl
+
 
 def get_ele_info():
     student = UserInfo()
@@ -12,11 +17,23 @@ def get_ele_info():
     if driver:
         web = check_electricity(username, password, driver)
         if web.login():
-            time_str = get_cn_time()
+            time_str,year,month,day = get_cn_time()
             dictionary = web.get_info_list()
             if dictionary:
                 print("数据获取完毕")
                 return dictionary,time_str
+
+
+def deal_info():
+    dict, time_str = get_ele_info()
+    msg = time_str +"\n>>宿舍电量小助手<<"
+
+    for key,value in dict.items():
+        str = key + "：" + value
+        msg = msg +"\n" + str
+    return msg
+
+
 
 def get_cn_time():
     daylist = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -31,7 +48,7 @@ def get_cn_time():
     i = daylist.index(week)
     str = f"今天是{year}年{month}月{day}日，星期{CNdaylist[i]}"
 
-    return str
+    return str,year,month,day
 
 
 def getdriver():
@@ -129,3 +146,81 @@ class UserInfo(object):
         finally:
             print('开始检测浏览器驱动')
 
+
+def init_db(dbpath):  # 初始化数据库
+    # 创建创建数据库
+    sql = '''         
+        create table ele_data
+        (
+        id integer primary key autoincrement,
+        data text,
+        value numeric
+        )
+
+    '''
+    # 创建数据表
+    conn = sqlite3.connect(dbpath)  #
+    cursor = conn.cursor()
+    cursor.execute(sql)
+    conn.commit()  # 提交
+    conn.close()  # 关闭
+
+
+def creat_new_file(path):
+    data = openpyxl.Workbook()  # 新建工作簿
+    data.create_sheet('宿舍用电数据')  # 添加页
+    table = data.get_sheet_by_name('宿舍用电数据') # 获得指定名称页
+    table = data.active  # 获得当前活跃的工作页，默认为第一个工作页
+     # 行，列，值 这里是从1开始计数的
+    table.cell(1, 1).value = "时间"
+    table.cell(1, 2).value="电量"
+    table.cell(1, 3).value = "当日用电量"
+    data.save(path)
+
+
+def read_latest(path):
+    data = openpyxl.load_workbook(path)
+    table = data.get_sheet_by_name('宿舍用电数据')
+    table = data.active
+    nrows = table.max_row  # 获得行数
+    ncols = table.max_column  # 获得列数
+    old_value = table.cell(nrows-1,ncols-1).value
+    return  nrows,ncols,data,old_value
+
+
+def write_latest(nrows,ncols,data,old_value,time_today,latest_value):
+    data = openpyxl.load_workbook(path)
+    table = data.get_sheet_by_name('宿舍用电数据')
+    table = data.active
+    #时间
+    table.cell(nrows,1 ).value = time_today
+    # 新数据
+    table.cell(nrows,2).value = latest_value
+    #差量
+    try:
+        print(latest_value, old_value)
+        value = float(latest_value) - float(old_value)
+
+        table.cell(nrows-1,ncols ).value = value
+    except Exception as e:
+        print(e)
+
+    data.save(path)
+
+if __name__ == '__main__':
+
+    dictionary, time_str =get_ele_info()
+    latest_value = dictionary["剩余电量"]
+    str, year, month, day = get_cn_time()
+    time_today = f"{year}/{month}/{day}"
+
+    path = "Data/用电数据.xlsx"
+
+    # creat_new_file(path)
+    nrows,ncols,data,old_value = read_latest(path)
+    # print(nrows,ncols,data,old_value )
+    write_latest(nrows,ncols,data,old_value,time_today,latest_value)
+
+
+    # print(deal_info())
+    time.sleep(5)
